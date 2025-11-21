@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: weather-postgres
+    environment:
+      - POSTGRES_USER=weather_admin
+      - POSTGRES_PASSWORD=weather_pass_2024
+      - POSTGRES_DB=weather_metadata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - weather-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weather_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  spark-master:
+    image: bde2020/spark-master:3.3.0-hadoop3.3
+    container_name: weather-spark-master
+    environment:
+      - SPARK_LOCAL_IP=spark-master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./data:/data
+      - ./src:/src
+      - ./config:/config
+    networks:
+      - weather-network
+
+  spark-worker:
+    image: bde2020/spark-worker:3.3.0-hadoop3.3
+    container_name: weather-spark-worker
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=3G
+      - SPARK_DRIVER_MEMORY=2G
+      - SPARK_EXECUTOR_MEMORY=2G
+    volumes:
+      - ./data:/data
+      - ./src:/src
+    depends_on:
+      - spark-master
+    networks:
+      - weather-network
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: weather-dashboard
+    environment:
+      - FLASK_APP=dashboard/app.py
+      - FLASK_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=weather_metadata
+      - POSTGRES_USER=weather_admin
+      - POSTGRES_PASSWORD=weather_pass_2024
+      - NOAA_API_TOKEN=${NOAA_API_TOKEN}
+      - SPARK_MASTER=spark://spark-master:7077
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+    networks:
+      - weather-network
+
+networks:
+  weather-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+
