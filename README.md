@@ -20,7 +20,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=weather_metadata
 POSTGRES_USER=weather_admin
-POSTGRES_PASSWORD=weather_pass_2024
+POSTGRES_PASSWORD=weather_pass_2025
 ```
 
 ### 2. Lancer les services Docker
