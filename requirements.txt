@@ -16,8 +16,6 @@ flask-cors==4.0.0
 
 # Data Visualization
 plotly==5.18.0
-matplotlib==3.8.2
-seaborn==0.13.0
 
 # API & HTTP
 requests==2.31.0
@@ -27,18 +25,12 @@ urllib3==2.1.0
 pyyaml==6.0.1
 python-dotenv==1.0.0
 
-# Logging & Monitoring
+# Logging
 colorlog==6.8.0
 
 # Utilities
-tqdm==4.66.1
 python-dateutil==2.8.2
 
 # Testing
 pytest==7.4.3
 pytest-cov==4.1.0
-
-# Notebook (optional)
-jupyter==1.0.0
-notebook==7.0.6
-

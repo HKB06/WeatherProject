@@ -1,10 +1,8 @@
 """
-Module d'ingestion de données météo via API temps réel
-Source: Open-Meteo API (gratuite, sans clé nécessaire)
-https://open-meteo.com/
-
-Alternative: NOAA API (nécessite token gratuit)
-https://www.ncei.noaa.gov/support/access-data-service-api-user-documentation
+Module d'ingestion de données météo via API
+Source: Open-Meteo Archive API (gratuite, sans clé nécessaire)
+https://open-meteo.com/en/docs/historical-weather-api
+Période: 2023-2025 | Villes: Nice, Cannes, Monaco, Antibes, Menton
 """
 
 import os
@@ -67,7 +65,7 @@ class WeatherAPIIngestion:
     def fetch_current_weather(self, latitude: float, longitude: float, 
                              location_name: str = "Unknown") -> Optional[Dict[str, Any]]:
         """
-        Récupère les données météo actuelles depuis Open-Meteo API
+        Récupère les données météo RÉELLES depuis 2023 depuis Open-Meteo Archive API
         
         Args:
             latitude: Latitude du lieu
@@ -77,18 +75,25 @@ class WeatherAPIIngestion:
         Returns:
             Données météo ou None
         """
-        logger.info(f"Récupération des données météo pour {location_name} ({latitude}, {longitude})")
+        logger.info(f"Récupération des données météo RÉELLES (2023 → aujourd'hui) pour {location_name} ({latitude}, {longitude})")
         
         try:
-            base_url = self.api_config.get('base_url', 'https://api.open-meteo.com/v1/forecast')
+            from datetime import datetime, timedelta
+            
+            # Dates : depuis janvier 2023 jusqu'à aujourd'hui
+            end_date = datetime.now().date()
+            start_date = datetime(2023, 1, 1).date()
+            
+            # Utiliser l'API Archive d'Open-Meteo pour les données historiques réelles
+            base_url = 'https://archive-api.open-meteo.com/v1/archive'
             
             params = {
                 'latitude': latitude,
                 'longitude': longitude,
-                'current': 'temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code',
-                'hourly': 'temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m',
-                'timezone': 'auto',
-                'forecast_days': 1
+                'start_date': start_date.strftime('%Y-%m-%d'),
+                'end_date': end_date.strftime('%Y-%m-%d'),
+                'daily': 'temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,windspeed_10m_max,relative_humidity_2m_mean',
+                'timezone': 'Europe/Paris'
             }
             
             timeout = self.api_config.get('timeout', 30)
@@ -172,6 +177,66 @@ class WeatherAPIIngestion:
         
         return str(json_path)
     
+    def save_real_weather_to_csv(self, weather_data: List[Dict[str, Any]]) -> str:
+        """
+        Sauvegarde les vraies données météo en CSV pour traitement Spark
+        """
+        import pandas as pd
+        
+        all_records = []
+        
+        for location_data in weather_data:
+            if not location_data:
+                continue
+                
+            location_name = location_data.get('location_name', 'Unknown')
+            lat = location_data.get('latitude', 0)
+            lon = location_data.get('longitude', 0)
+            data = location_data.get('data', {})
+            
+            daily = data.get('daily', {})
+            if not daily:
+                continue
+            
+            dates = daily.get('time', [])
+            temps_max = daily.get('temperature_2m_max', [])
+            temps_min = daily.get('temperature_2m_min', [])
+            temps_mean = daily.get('temperature_2m_mean', [])
+            precip = daily.get('precipitation_sum', [])
+            wind = daily.get('windspeed_10m_max', [])
+            humidity = daily.get('relative_humidity_2m_mean', [])
+            
+            for i in range(len(dates)):
+                all_records.append({
+                    'STATION': f'OPENMETEO_{location_name.upper()}',
+                    'STATION_NAME': f'{location_name}, Côte d\'Azur, France',
+                    'DATE': dates[i],
+                    'LATITUDE': lat,
+                    'LONGITUDE': lon,
+                    'ELEVATION': 0,
+                    'TMAX': temps_max[i] if i < len(temps_max) else None,
+                    'TMIN': temps_min[i] if i < len(temps_min) else None,
+                    'TAVG': temps_mean[i] if i < len(temps_mean) else None,
+                    'PRCP': precip[i] if i < len(precip) else 0,
+                    'AWND': wind[i] if i < len(wind) else None,
+                    'RHUM': humidity[i] if i < len(humidity) else None,
+                })
+        
+        if not all_records:
+            logger.warning("Aucune donnée réelle à sauvegarder")
+            return None
+        
+        df = pd.DataFrame(all_records)
+        
+        raw_dir = Path(self.paths['raw_data'])
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_path = raw_dir / f"openmeteo_real_data_{timestamp}.csv"
+        
+        df.to_csv(csv_path, index=False)
+        logger.info(f" VRAIES données météo sauvegardées: {csv_path} ({len(df)} enregistrements)")
+        
+        return str(csv_path)
+    
     def ingest_api_data(self, locations: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Ingère les données API pour plusieurs localisations
@@ -188,11 +253,17 @@ class WeatherAPIIngestion:
         # Récupérer les données
         results = self.fetch_multiple_locations(locations)
         
-        # Sauvegarder chaque résultat
+        # Sauvegarder chaque résultat en JSON
         saved_files = []
         for result in results:
             file_path = self.save_raw_json(result, result['location_name'])
             saved_files.append(file_path)
+        
+        # Sauvegarder aussi en CSV pour traitement Spark
+        csv_path = self.save_real_weather_to_csv(results)
+        if csv_path:
+            saved_files.append(csv_path)
+            logger.info(f" CSV des vraies données créé pour traitement Spark: {csv_path}")
         
         # Statistiques
         duration = (datetime.now() - start_time).total_seconds()
@@ -203,7 +274,8 @@ class WeatherAPIIngestion:
             'locations_success': len(results),
             'processing_duration_seconds': round(duration, 2),
             'saved_files': saved_files,
-            'fetch_timestamp': datetime.now().isoformat()
+            'fetch_timestamp': datetime.now().isoformat(),
+            'real_data_csv': csv_path if csv_path else None
         }
         
         # Sauvegarder les métadonnées

@@ -129,7 +129,7 @@ def get_daily_weather():
     try:
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
-        limit = int(request.args.get('limit', 365))
+        limit = int(request.args.get('limit', 5000))
         
         df = read_parquet_to_pandas('daily')
         if df.empty:

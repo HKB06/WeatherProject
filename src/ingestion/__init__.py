@@ -1,13 +1,10 @@
 """
 Module d'ingestion de données météorologiques
-Supporte CSV (NOAA historique) et API (temps réel)
+Source : Open-Meteo Archive API (données historiques 2023-2025)
 """
 
-from src.ingestion.csv_ingestion import NOAACSVIngestion
 from src.ingestion.api_ingestion import WeatherAPIIngestion
 
 __all__ = [
-    'NOAACSVIngestion',
     'WeatherAPIIngestion'
 ]
-

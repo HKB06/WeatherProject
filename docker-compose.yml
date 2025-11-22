@@ -67,7 +67,6 @@ services:
       - POSTGRES_DB=weather_metadata
       - POSTGRES_USER=weather_admin
       - POSTGRES_PASSWORD=weather_pass_2024
-      - NOAA_API_TOKEN=${NOAA_API_TOKEN}
       - SPARK_MASTER=spark://spark-master:7077
     ports:
       - "5000:5000"

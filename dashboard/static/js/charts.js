@@ -105,11 +105,13 @@ function updateStatisticsCards(stats) {
  */
 async function loadWeatherData() {
     try {
-        // Données quotidiennes
-        const dailyResponse = await fetch(`${API_BASE_URL}/api/weather/daily?limit=365`);
+        // Données quotidiennes (charger TOUS les jours disponibles)
+        console.log(' Chargement de TOUTES les données quotidiennes...');
+        const dailyResponse = await fetch(`${API_BASE_URL}/api/weather/daily?limit=5000`);
         const dailyData = await dailyResponse.json();
         
         if (dailyData.success) {
+            console.log(` ${dailyData.data.length} jours chargés depuis l'API`);
             currentData.daily = dailyData.data;
             updateDataTable(dailyData.data.slice(0, 50));
         }
@@ -158,12 +160,23 @@ function initializeCharts() {
 /**
  * Graphique: Évolution de la température
  */
-function createTemperatureTrendChart() {
+function createTemperatureTrendChart(days = 365) {
     if (!currentData.daily || currentData.daily.length === 0) {
         console.warn('Pas de données pour créer le graphique de température');
         return;
     }
-    const data = currentData.daily.slice().reverse().slice(-365);
+    
+    console.log(` === CRÉATION GRAPHIQUE ===`);
+    console.log(` Demandé: ${days} jours | Total dispo: ${currentData.daily.length} jours`);
+    
+    const sortedData = currentData.daily.slice().sort((a, b) => 
+        new Date(a.DATE) - new Date(b.DATE)
+    );
+    
+    const data = sortedData.slice(-days);
+    
+    console.log(` Affichage: ${data.length} jours`);
+    console.log(` Période: ${data[0]?.DATE} → ${data[data.length-1]?.DATE}`);
     
     const trace1 = {
         x: data.map(d => d.DATE),
@@ -202,11 +215,15 @@ function createTemperatureTrendChart() {
         margin: { l: 50, r: 50, t: 20, b: 50 }
     };
     
-    Plotly.newPlot('temperatureTrendChart', [trace1, trace2, trace3], layout, {
+    const chartDiv = document.getElementById('temperatureTrendChart');
+    Plotly.purge(chartDiv);
+    Plotly.newPlot(chartDiv, [trace1, trace2, trace3], layout, {
         responsive: true,
         displayModeBar: true,
         displaylogo: false
     });
+    
+    console.log(` Graphique mis à jour !`);
 }
 
 /**
@@ -492,10 +509,17 @@ function displayIngestionMetadata(stats) {
  */
 function initializeEventListeners() {
     // Filtre de période pour le graphique de température
-    document.getElementById('tempPeriodSelect')?.addEventListener('change', (e) => {
-        const days = parseInt(e.target.value);
-        filterTemperatureChart(days);
-    });
+    const periodSelect = document.getElementById('tempPeriodSelect');
+    if (periodSelect) {
+        console.log(' Event listener attaché au filtre de période');
+        periodSelect.addEventListener('change', (e) => {
+            const days = parseInt(e.target.value);
+            console.log(` CHANGEMENT DÉTECTÉ ! Filtre → ${days} jours`);
+            filterTemperatureChart(days);
+        });
+    } else {
+        console.error(' Element tempPeriodSelect introuvable !');
+    }
     
     // Bouton appliquer filtres
     document.getElementById('applyFiltersBtn')?.addEventListener('click', applyFilters);
@@ -517,7 +541,7 @@ async function applyFilters() {
     const endDate = document.getElementById('endDateFilter').value;
     const limit = document.getElementById('limitFilter').value || 365;
     
-    console.log('🔍 Application des filtres:', { startDate, endDate, limit });
+    console.log(' Application des filtres:', { startDate, endDate, limit });
     
     try {
         showLoading(true);
@@ -526,45 +550,45 @@ async function applyFilters() {
         if (startDate) url += `&start_date=${startDate}`;
         if (endDate) url += `&end_date=${endDate}`;
         
-        console.log('📡 URL de requête:', url);
+        console.log(' URL de requête:', url);
         
         const response = await fetch(url);
-        console.log('📥 Réponse reçue:', response.status);
+        console.log(' Réponse reçue:', response.status);
         
         const data = await response.json();
-        console.log('📊 Données reçues:', data);
+        console.log(' Données reçues:', data);
         
         if (data.success) {
             // Mettre à jour les données actuelles
             currentData.daily = data.data;
-            console.log(`✅ ${data.data.length} enregistrements chargés`);
+            console.log(` ${data.data.length} enregistrements chargés`);
             
             // Recharger la table
             updateDataTable(data.data.slice(0, 50));
-            console.log('✅ Table mise à jour');
+            console.log(' Table mise à jour');
             
             // IMPORTANT : Recharger tous les graphiques avec les nouvelles données !
             if (data.data && data.data.length > 0) {
-                console.log('🎨 Rechargement du graphique de température...');
+                console.log(' Rechargement du graphique de température...');
                 createTemperatureTrendChart();
-                console.log('🎨 Rechargement de la distribution...');
+                console.log(' Rechargement de la distribution...');
                 createTemperatureDistributionChart();
-                console.log('✅ Graphiques rechargés');
+                console.log(' Graphiques rechargés');
             } else {
-                console.warn('⚠️ Aucune donnée à afficher');
+                console.warn(' Aucune donnée à afficher');
             }
             
             // Afficher un message de succès
-            console.log(`✅ Filtres appliqués : ${data.data.length} jours affichés`);
+            console.log(` Filtres appliqués : ${data.data.length} jours affichés`);
         } else {
-            console.error('❌ Réponse API avec success=false:', data);
+            console.error(' Réponse API avec success=false:', data);
             showError('Aucune donnée trouvée pour ces filtres');
         }
         
         showLoading(false);
     } catch (error) {
-        console.error('❌ Erreur application filtres:', error);
-        console.error('❌ Stack:', error.stack);
+        console.error(' Erreur application filtres:', error);
+        console.error(' Stack:', error.stack);
         showError('Erreur lors de l\'application des filtres: ' + error.message);
         showLoading(false);
     }
@@ -648,35 +672,16 @@ function showError(message) {
  * Filtre le graphique de température par période
  */
 function filterTemperatureChart(days) {
+    console.log(`\n === FILTRAGE DEMANDÉ ===`);
+    console.log(` Nombre de jours souhaités: ${days}`);
+    
     if (!currentData.daily) {
-        console.warn('Aucune donnée disponible pour filtrer');
+        console.error(' Aucune donnée disponible (currentData.daily est vide)');
         return;
     }
     
-    console.log(`Filtrage du graphique : ${days} derniers jours`);
-    
-    // Filtrer les données (du plus récent au plus ancien)
-    const sortedData = currentData.daily.slice().sort((a, b) => 
-        new Date(b.DATE) - new Date(a.DATE)
-    );
-    const filteredData = sortedData.slice(0, days).reverse();
-    
-    console.log(`Affichage de ${filteredData.length} jours`);
-    
-    // Mettre à jour le graphique
-    const update = {
-        x: [
-            filteredData.map(d => d.DATE),
-            filteredData.map(d => d.DATE),
-            filteredData.map(d => d.DATE)
-        ],
-        y: [
-            filteredData.map(d => d.TEMP_AVG),
-            filteredData.map(d => d.TEMP_MAX),
-            filteredData.map(d => d.TEMP_MIN)
-        ]
-    };
-    
-    Plotly.restyle('temperatureTrendChart', update);
+    console.log(` Données disponibles: ${currentData.daily.length} jours`);
+    createTemperatureTrendChart(days);
+    console.log(` Filtrage terminé\n`);
 }
 

@@ -136,7 +136,7 @@ class DataPersistence:
                 'saved_at': datetime.now().isoformat()
             }
             
-            logger.info(f"✅ Dataset '{dataset_name}' sauvegardé: {record_count} enregistrements, {size_mb:.2f} MB en {duration:.2f}s")
+            logger.info(f" Dataset '{dataset_name}' sauvegardé: {record_count} enregistrements, {size_mb:.2f} MB en {duration:.2f}s")
             
             return metadata
             
